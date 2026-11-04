@@ -49,17 +49,14 @@
   const GAP_BASE = 7;
   const SIZES = [9, 10, 11, 12];
   const FONT = '"Arial", "Helvetica Neue", "Noto Sans", "Segoe UI", system-ui, sans-serif';
-
   const FR = "Je t'aime", SR = "Volim te", MK = "Сакам те", GR = "Σ' αγαπώ", SV = "Jag älskar dig";
-  const RU = "Я тебя люблю"; // placed once, faintly, near the bottom tip
 
-  // French and Serbian always travel together (in either order).
   const PHRASES = [
     "I love you", "Seni seviyorum", "Te amo", FR, MK, GR,
     "Ich liebe dich", "Ti amo", "Eu te amo",
     "사랑해", "愛してる", "我爱你", "मैं तुमसे प्यार करता हूँ",
     "Ik hou van jou", SV, "Kocham cię",
-    "ฉันรักเธอ", "Anh yêu em", "Aku cinta kamu", "Я тебе кохаю",
+    "ฉันรักเธอ", "Anh yêu em", "Aku cinta kamu","Я тебя люблю", "Я тебе кохаю",
   ];
 
   // Seeded RNG so the layout is the same each run (like random.Random(11)).
@@ -135,8 +132,6 @@
       list: first,
       at(t) { while (this.list.length <= t) { if (!stream.length) refill(); this.list.push(stream.shift()); } return this.list[t]; },
     });
-    // Left lobe opens with French · Serbian (Greek goes under Serbian, see below).
-    // Right lobe reads Swedish, Serbian, French, Macedonian, Greek.
     const leftQ = makeQ([[FR, SR]]);
     const rightQ = makeQ([[SV], [SR, FR], [MK], [GR]]);
     const mainQ = makeQ([]);
@@ -154,13 +149,11 @@
         const lobes = row.length === 2;
         const Q = lobes ? (si === 0 ? leftQ : rightQ) : mainQ;
 
-        // Second row of the left lobe ends with Greek, right under "Volim te".
         let tail = null;
         if (lobes && si === 0 && leftRow++ === 1) {
           const size = 11, w = measure(GR, size);
           if (hi - lo > w + 20 * K) { tail = { text: GR, size, w }; hi -= w + GAP; }
-        }
-        // Russian appears once, near the bottom tip.
+        
         if (!ruDone && !lobes && y < YMIN + (YMAX - YMIN) * 0.3 && hi - lo > measure(RU, 9) + 2 * K) {
           Q.list.unshift([RU]); ruDone = true;
         }
