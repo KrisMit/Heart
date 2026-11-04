@@ -1,0 +1,308 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Multilingual Love Heart</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+  /* Layout: one full-screen canvas, heart centred and scaled to the smaller side */
+  :root {
+    --bg: #060208;
+    --ink: #f3c9cf;
+    --muted: #7a4652;
+    --font: "Arial", "Helvetica Neue", "Noto Sans", "Segoe UI", system-ui, sans-serif;
+    color-scheme: dark;
+  }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font);
+    overflow: hidden;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 0;
+    box-sizing: border-box;
+  }
+  canvas { display: block; width: 100%; height: 100%; cursor: pointer; }
+  .hint {
+    position: fixed;
+    left: 0; right: 0;
+    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+    text-align: center;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    pointer-events: none;
+  }
+</style>
+</head><body style="margin:0">
+
+<canvas id="heart" aria-label="A heart drawn from the words I love you in 23 languages"></canvas>
+<div class="hint">Tap to replay</div>
+
+<script>
+(() => {
+  const BG = "#060208";
+  const BGC = [6 / 255, 2 / 255, 8 / 255];
+  const FLASH = [1.0, 0.78, 0.78];
+  const DURATION = 10;     // seconds to fill the heart
+  const ANIM = 42;         // frames per word float-in
+  const GAP_BASE = 7;
+  const SIZES = [9, 10, 11, 12];
+  const FONT = '"Arial", "Helvetica Neue", "Noto Sans", "Segoe UI", system-ui, sans-serif';
+
+  const FR = "Je t'aime", SR = "Volim te", MK = "Сакам те", GR = "Σ' αγαπώ", SV = "Jag älskar dig";
+  const RU = "Я тебя люблю"; // placed once, faintly, near the bottom tip
+
+  // French and Serbian always travel together (in either order).
+  const PHRASES = [
+    "I love you", "Seni seviyorum", "Te amo", FR, MK, GR,
+    "Ich liebe dich", "Ti amo", "Eu te amo",
+    "사랑해", "愛してる", "我爱你", "मैं तुमसे प्यार करता हूँ",
+    "Ik hou van jou", SV, "Kocham cię",
+    "ฉันรักเธอ", "Anh yêu em", "Aku cinta kamu", "Я тебе кохаю",
+  ];
+
+  // Seeded RNG so the layout is the same each run (like random.Random(11)).
+  function mulberry(seed) {
+    return () => {
+      seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  const cv = document.getElementById("heart");
+  const ctx = cv.getContext("2d");
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const hx = c => "rgb(" + c.map(v => Math.round(Math.max(0, Math.min(1, v)) * 255)).join(",") + ")";
+  const mix = (a, b, k) => a.map((p, i) => p + (b[i] - p) * k);
+  const dim = (c, k) => c.map(v => v * k);
+  const clamp = v => Math.max(0, Math.min(1, v));
+
+  let W, H, DPR, SC, K, words, rng, frame, startFrame, rate, acc, nextIdx, raf, shimmerTimer;
+
+  function heartPt(a) {
+    const x = 16 * Math.sin(a) ** 3;
+    const y = 13 * Math.cos(a) - 5 * Math.cos(2 * a) - 2 * Math.cos(3 * a) - Math.cos(4 * a);
+    return [x * SC, y * SC + 1 * SC];
+  }
+
+  function fontPx(size) { return size * 1.33 * K; }
+  function setFont(size, bump = 0) { ctx.font = `bold ${fontPx(size) + bump}px ${FONT}`; }
+  function measure(text, size) { setFont(size); return ctx.measureText(text).width; }
+
+  function build() {
+    rng = mulberry(11);
+    const POLY = [];
+    for (let i = 0; i < 720; i++) POLY.push(heartPt(2 * Math.PI * i / 720));
+    const EDGES = POLY.map((p, i) => [p, POLY[(i + 1) % POLY.length]]);
+    const YMAX = Math.max(...POLY.map(p => p[1]));
+    const YMIN = Math.min(...POLY.map(p => p[1]));
+    const CY = (YMAX + YMIN) / 2;
+
+    const spans = y => {
+      const xs = [];
+      for (const [[x1, y1], [x2, y2]] of EDGES)
+        if ((y1 <= y && y < y2) || (y2 <= y && y < y1)) xs.push(x1 + (y - y1) * (x2 - x1) / (y2 - y1));
+      xs.sort((a, b) => a - b);
+      const out = [];
+      for (let i = 0; i + 1 < xs.length; i += 2) out.push([xs[i], xs[i + 1]]);
+      return out;
+    };
+    const intersect = (A, B) => {
+      const out = [];
+      for (const a of A) for (const b of B) {
+        const lo = Math.max(a[0], b[0]), hi = Math.min(a[1], b[1]);
+        if (hi - lo > 14 * K) out.push([lo, hi]);
+      }
+      return out;
+    };
+
+    // Shared shuffled stream of phrase units.
+    let stream = [];
+    const refill = () => {
+      const base = PHRASES.slice();
+      for (let i = base.length - 1; i > 0; i--) {
+        const j = Math.floor(rng() * (i + 1));
+        [base[i], base[j]] = [base[j], base[i]];
+      }
+      for (const p of base) stream.push(p === FR ? (rng() < 0.5 ? [FR, SR] : [SR, FR]) : [p]);
+    };
+    // A queue starts with its own scripted units, then draws from the shared stream.
+    const makeQ = first => ({
+      list: first,
+      at(t) { while (this.list.length <= t) { if (!stream.length) refill(); this.list.push(stream.shift()); } return this.list[t]; },
+    });
+    // Left lobe opens with French · Serbian (Greek goes under Serbian, see below).
+    // Right lobe reads Swedish, Serbian, French, Macedonian, Greek.
+    const leftQ = makeQ([[FR, SR]]);
+    const rightQ = makeQ([[SV], [SR, FR], [MK], [GR]]);
+    const mainQ = makeQ([]);
+
+    const rowH = fontPx(12) * 1.25 + 4 * K;
+    const half = rowH / 2;
+    const GAP = GAP_BASE * K;
+    const placed = [];
+    let leftRow = 0, ruDone = false;
+
+    for (let y = YMAX - half; y > YMIN + half; y -= rowH) {
+      const row = intersect(spans(y + half), spans(y - half));
+      row.forEach(([lo, hi], si) => {
+        lo += 4 * K; hi -= 4 * K;
+        const lobes = row.length === 2;
+        const Q = lobes ? (si === 0 ? leftQ : rightQ) : mainQ;
+
+        // Second row of the left lobe ends with Greek, right under "Volim te".
+        let tail = null;
+        if (lobes && si === 0 && leftRow++ === 1) {
+          const size = 11, w = measure(GR, size);
+          if (hi - lo > w + 20 * K) { tail = { text: GR, size, w }; hi -= w + GAP; }
+        }
+        // Russian appears once, near the bottom tip.
+        if (!ruDone && !lobes && y < YMIN + (YMAX - YMIN) * 0.3 && hi - lo > measure(RU, 9) + 2 * K) {
+          Q.list.unshift([RU]); ruDone = true;
+        }
+
+        let cur = lo + rng() * 8 * K;
+        const line = [];
+        while (true) {
+          let fit = null;
+          // Try units in queue order; one that doesn't fit keeps its place for the next gap.
+          for (let t = 0; t < 10; t++) {
+            const unit = Q.at(t);
+            const size = unit[0] === RU ? 9 : SIZES[Math.floor(rng() * SIZES.length)];
+            const ws = unit.map(s => measure(s, size));
+            const total = ws.reduce((a, b) => a + b, 0) + GAP * (unit.length - 1);
+            if (cur + total <= hi) { Q.list.splice(t, 1); fit = [unit, size, ws]; break; }
+          }
+          if (!fit) break;
+          const [unit, size, ws] = fit;
+          unit.forEach((text, i) => {
+            line.push({ x: cur + ws[i] / 2, text, size, w: ws[i] });
+            cur += ws[i] + GAP;
+          });
+        }
+        if (line.length > 1) {
+          const last = line[line.length - 1];
+          const left = hi - (last.x + last.w / 2);
+          line.forEach((it, i) => { it.x += left * i / (line.length - 1); });
+        } else if (line.length && !tail) {
+          line[0].x = (lo + hi) / 2;
+        }
+        if (tail) { hi += tail.w + GAP; line.push({ x: hi - tail.w / 2, text: tail.text, size: tail.size, w: tail.w }); }
+        if (!line.length) return;
+        line.forEach((it, i) => placed.push({ ...it, y, edge: i === 0 || i === line.length - 1 }));
+      });
+    }
+
+    const wine = [0.58, 0, 0.09], crimson = [0.9, 0.05, 0.14], blood = [0.98, 0.1, 0.16];
+    for (const p of placed) {
+      const rad = Math.min(1, Math.hypot(p.x / (16 * SC), (p.y - CY) / (14.5 * SC)));
+      let base = mix(wine, crimson, 0.25 + 0.75 * rad);
+      base = mix(base, blood, rng() * 0.35 + (p.edge ? 0.3 : 0));
+      p.color = base.map(v => Math.min(1, v));
+      if (p.text === RU) { p.faint = true; p.color = mix(BGC, p.color, 0.3); }
+      p.rad = rad;
+      p.f = -1;
+      p.dx = (rng() * 20 - 10) * K;
+      p.glint = 0;
+    }
+    const edges = placed.filter(p => p.edge);
+    const inner = placed.filter(p => !p.edge);
+    edges.sort((a, b) => ((Math.atan2(a.x, a.y - CY) + 2 * Math.PI) % (2 * Math.PI)) - ((Math.atan2(b.x, b.y - CY) + 2 * Math.PI) % (2 * Math.PI)));
+    const jitter = new Map(inner.map(p => [p, rng() * 0.08]));
+    inner.sort((a, b) => (-a.rad + jitter.get(a)) - (-b.rad + jitter.get(b)));
+    return edges.concat(inner);
+  }
+
+  function resize() {
+    DPR = window.devicePixelRatio || 1;
+    const r = cv.getBoundingClientRect();
+    W = r.width; H = r.height;
+    cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+    // Heart spans ~32 units wide and ~30 tall; leave a margin.
+    SC = Math.min(W / 34, (H - 40) / 33);
+    K = SC / 21;
+    start();
+  }
+
+  function draw() {
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.fillStyle = BG;
+    ctx.fillRect(0, 0, W, H);
+    ctx.translate(W / 2, H / 2 - 4);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    const LIFT = 34 * K;
+    for (const p of words) {
+      if (p.f < 0) continue;
+      const u = clamp(p.f / ANIM);
+      const e = 1 - (1 - u) ** 3;
+      const x = p.x, y = -p.y;
+      const px = x + p.dx * (1 - e), py = y - (1 - e) * LIFT;
+      const c = p.color;
+      setFont(p.size);
+      ctx.fillStyle = hx(mix(BGC, dim(c, 0.3), e));
+      ctx.fillText(p.text, x + 2 * K, y + 3 * K);
+      setFont(p.size, 1.3 * K);
+      ctx.fillStyle = hx(mix(BGC, dim(c, 0.2), e * e));
+      ctx.fillText(p.text, px, py);
+      const flash = (p.faint ? 0.1 : 0.75) * Math.sin(Math.PI * clamp((u - 0.55) / 0.45));
+      let col = mix(mix(BGC, c, e ** 1.5), FLASH, flash);
+      if (p.glint > 0) col = mix(col, FLASH, 0.6 * p.glint);
+      setFont(p.size);
+      ctx.fillStyle = hx(col);
+      ctx.fillText(p.text, px, py);
+    }
+  }
+
+  function step() {
+    frame++;
+    if (nextIdx < words.length) {
+      acc += rate;
+      while (acc >= 1 && nextIdx < words.length) { acc -= 1; words[nextIdx++].f = 0; }
+    }
+    let active = false;
+    for (const p of words) {
+      if (p.f >= 0 && p.f < ANIM) { p.f++; active = true; }
+      if (p.glint > 0) { p.glint = Math.max(0, p.glint - 0.06); active = true; }
+    }
+    draw();
+    if (nextIdx < words.length || active) raf = requestAnimationFrame(step);
+    else if (!shimmerTimer) shimmer();
+  }
+
+  function shimmer() {
+    if (!words.length) return;
+    const w = words[Math.floor(Math.random() * words.length)];
+    if (!w.faint) w.glint = 1;
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(step);
+    shimmerTimer = setTimeout(shimmer, 140);
+  }
+
+  function start() {
+    cancelAnimationFrame(raf);
+    clearTimeout(shimmerTimer);
+    shimmerTimer = null;
+    words = build();
+    frame = 0; acc = 0; nextIdx = 0;
+    rate = words.length / (DURATION * 60);
+    if (reduce) {
+      words.forEach(p => { p.f = ANIM; });
+      nextIdx = words.length;
+      draw();
+      return;
+    }
+    raf = requestAnimationFrame(step);
+  }
+
+  cv.addEventListener("click", start);
+  let rt;
+  window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(resize, 150); });
+  (document.fonts ? document.fonts.ready : Promise.resolve()).then(resize);
+})();
+</script>
+</body></html>
