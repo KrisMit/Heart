@@ -36,7 +36,7 @@
 </style>
 </head><body style="margin:0">
 
-<canvas id="heart" aria-label="A heart drawn from the words I love you in 23 languages"></canvas>
+<canvas id="heart" aria-label="A heart drawn from the words I love you in 22 languages"></canvas>
 <div class="hint">Tap to replay</div>
 
 <script>
@@ -140,7 +140,7 @@
     const half = rowH / 2;
     const GAP = GAP_BASE * K;
     const placed = [];
-    let leftRow = 0, ruDone = false;
+    let leftRow = 0;
 
     for (let y = YMAX - half; y > YMIN + half; y -= rowH) {
       const row = intersect(spans(y + half), spans(y - half));
@@ -153,9 +153,6 @@
         if (lobes && si === 0 && leftRow++ === 1) {
           const size = 11, w = measure(GR, size);
           if (hi - lo > w + 20 * K) { tail = { text: GR, size, w }; hi -= w + GAP; }
-        
-        if (!ruDone && !lobes && y < YMIN + (YMAX - YMIN) * 0.3 && hi - lo > measure(RU, 9) + 2 * K) {
-          Q.list.unshift([RU]); ruDone = true;
         }
 
         let cur = lo + rng() * 8 * K;
@@ -165,7 +162,7 @@
           // Try units in queue order; one that doesn't fit keeps its place for the next gap.
           for (let t = 0; t < 10; t++) {
             const unit = Q.at(t);
-            const size = unit[0] === RU ? 9 : SIZES[Math.floor(rng() * SIZES.length)];
+            const size = SIZES[Math.floor(rng() * SIZES.length)];
             const ws = unit.map(s => measure(s, size));
             const total = ws.reduce((a, b) => a + b, 0) + GAP * (unit.length - 1);
             if (cur + total <= hi) { Q.list.splice(t, 1); fit = [unit, size, ws]; break; }
@@ -196,7 +193,6 @@
       let base = mix(wine, crimson, 0.25 + 0.75 * rad);
       base = mix(base, blood, rng() * 0.35 + (p.edge ? 0.3 : 0));
       p.color = base.map(v => Math.min(1, v));
-      if (p.text === RU) { p.faint = true; p.color = mix(BGC, p.color, 0.3); }
       p.rad = rad;
       p.f = -1;
       p.dx = (rng() * 20 - 10) * K;
@@ -242,7 +238,7 @@
       setFont(p.size, 1.3 * K);
       ctx.fillStyle = hx(mix(BGC, dim(c, 0.2), e * e));
       ctx.fillText(p.text, px, py);
-      const flash = (p.faint ? 0.1 : 0.75) * Math.sin(Math.PI * clamp((u - 0.55) / 0.45));
+      const flash = 0.75 * Math.sin(Math.PI * clamp((u - 0.55) / 0.45));
       let col = mix(mix(BGC, c, e ** 1.5), FLASH, flash);
       if (p.glint > 0) col = mix(col, FLASH, 0.6 * p.glint);
       setFont(p.size);
@@ -269,8 +265,7 @@
 
   function shimmer() {
     if (!words.length) return;
-    const w = words[Math.floor(Math.random() * words.length)];
-    if (!w.faint) w.glint = 1;
+    words[Math.floor(Math.random() * words.length)].glint = 1;
     cancelAnimationFrame(raf);
     raf = requestAnimationFrame(step);
     shimmerTimer = setTimeout(shimmer, 140);
