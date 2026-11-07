@@ -59,7 +59,7 @@
     "ฉันรักเธอ", "Anh yêu em", "Aku cinta kamu","Я тебя люблю", "Я тебе кохаю",
   ];
 
-  // Seeded RNG so the layout is the same each run (like random.Random(11)).
+  // Seeded RNG so the layout is the same each run (like random.Random(11))
   function mulberry(seed) {
     return () => {
       seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
@@ -117,7 +117,7 @@
       return out;
     };
 
-    // Shared shuffled stream of phrase units.
+    // Shared shuffled stream of phrase units
     let stream = [];
     const refill = () => {
       const base = PHRASES.slice();
@@ -127,7 +127,7 @@
       }
       for (const p of base) stream.push(p === FR ? (rng() < 0.5 ? [FR, SR] : [SR, FR]) : [p]);
     };
-    // A queue starts with its own scripted units, then draws from the shared stream.
+    // A queue starts with its own scripted units, then draws from the shared stream
     const makeQ = first => ({
       list: first,
       at(t) { while (this.list.length <= t) { if (!stream.length) refill(); this.list.push(stream.shift()); } return this.list[t]; },
@@ -159,7 +159,7 @@
         const line = [];
         while (true) {
           let fit = null;
-          // Try units in queue order; one that doesn't fit keeps its place for the next gap.
+          // Try units in queue order, one that doesn't fit keeps its place for the next gap
           for (let t = 0; t < 10; t++) {
             const unit = Q.at(t);
             const size = SIZES[Math.floor(rng() * SIZES.length)];
@@ -211,7 +211,7 @@
     const r = cv.getBoundingClientRect();
     W = r.width; H = r.height;
     cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
-    // Heart spans ~32 units wide and ~30 tall; leave a margin.
+    // Heart spans ~32 units wide and ~30 tall, leave a margin
     SC = Math.min(W / 34, (H - 40) / 33);
     K = SC / 21;
     start();
